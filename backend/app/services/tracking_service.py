@@ -111,14 +111,25 @@ async def check_core_web_vitals(
     lab = result.get("lab_data") or {}
     field = result.get("field_data") or {}
 
+    # Extract numeric values from metric dicts
+    # PageSpeed returns {"numeric_value": ..., "display_value": ..., "score": ...}
+    # CrUX returns {"p75": ..., "histogram": [...]}
+    def _lab_val(key):
+        m = lab.get(key)
+        return m.get("numeric_value") if isinstance(m, dict) else m
+
+    def _field_val(key):
+        m = field.get(key)
+        return m.get("p75") if isinstance(m, dict) else m
+
     snapshot = CWVSnapshot(
         project_id=project_id,
         url=url,
-        lcp=lab.get("lcp") or field.get("lcp_p75"),
-        inp=lab.get("inp") or field.get("inp_p75"),
-        cls=lab.get("cls") or field.get("cls_p75"),
-        fcp=lab.get("fcp"),
-        ttfb=lab.get("ttfb"),
+        lcp=_lab_val("lcp") or _field_val("lcp"),
+        inp=_lab_val("inp") or _field_val("inp"),
+        cls_value=_lab_val("cls") or _field_val("cls"),
+        fcp=_lab_val("fcp"),
+        ttfb=_lab_val("ttfb"),
         performance_score=lab.get("performance_score"),
     )
     db.add(snapshot)

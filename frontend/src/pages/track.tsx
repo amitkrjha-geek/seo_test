@@ -66,8 +66,31 @@ export default function TrackPage() {
     if (!currentProject || !url) return
     setIsCheckingCWV(true)
     try {
-      const data = await api.checkCoreWebVitals(currentProject.id, url)
-      setCwv(data as unknown as CWVResult)
+      const data = await api.checkCoreWebVitals(currentProject.id, url) as Record<string, unknown>
+      const lab = (data.lab_data || {}) as Record<string, unknown>
+      const field = (data.field_data || {}) as Record<string, unknown>
+
+      // Extract numeric values from nested metric objects
+      const getLabVal = (key: string) => {
+        const m = lab[key] as Record<string, unknown> | null
+        return m?.numeric_value as number | null ?? null
+      }
+      const getFieldVal = (key: string) => {
+        const m = field[key] as Record<string, unknown> | null
+        return m?.p75 as number | null ?? null
+      }
+
+      // PageSpeed returns LCP/FCP in ms, but UI displays in seconds
+      const lcpMs = getLabVal('lcp') ?? getFieldVal('lcp')
+      const fcpMs = getLabVal('fcp')
+      setCwv({
+        lcp: lcpMs != null ? Math.round(lcpMs / 100) / 10 : null, // ms -> s, 1 decimal
+        inp: getLabVal('inp') ?? getFieldVal('inp'),
+        cls: getLabVal('cls') ?? getFieldVal('cls'),
+        fcp: fcpMs != null ? Math.round(fcpMs / 100) / 10 : null, // ms -> s, 1 decimal
+        ttfb: getLabVal('ttfb') != null ? Math.round(getLabVal('ttfb')!) : null,
+        performance_score: lab.performance_score as number | null ?? null,
+      })
     } catch { /* ignore */ }
     setIsCheckingCWV(false)
   }

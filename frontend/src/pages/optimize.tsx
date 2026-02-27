@@ -10,11 +10,11 @@ import { Sparkles, Play, RefreshCw, BookOpen, BarChart3, Lightbulb, ShieldCheck 
 
 interface OptimizationResult {
   readability_score: number | null
-  grade_level: string | null
-  keyword_density: number | null
+  grade_level: string | number | null
+  keyword_density: Record<string, number> | number | null
   word_count: number | null
-  entities: { name: string; type: string; relevance: number }[]
-  suggestions: { category: string; message: string; priority: string }[]
+  entities: Record<string, unknown>[]
+  suggestions: Record<string, string>[]
   eeat_score: Record<string, number | string> | null
 }
 
@@ -94,15 +94,23 @@ export default function OptimizePage() {
                   <div className="flex items-center gap-4">
                     <div className={`flex flex-col items-center justify-center rounded-full h-20 w-20 ${readabilityBg(result.readability_score ?? 0)}`}>
                       <span className={`text-2xl font-bold ${readabilityColor(result.readability_score ?? 0)}`}>
-                        {result.readability_score ?? '-'}
+                        {result.readability_score != null ? Math.round(result.readability_score) : '-'}
                       </span>
                     </div>
                     <div>
-                      {result.grade_level && <p className="text-sm"><span className="text-muted-foreground">Grade Level:</span> {result.grade_level}</p>}
-                      {result.word_count && <p className="text-sm"><span className="text-muted-foreground">Words:</span> {result.word_count}</p>}
-                      {result.keyword_density != null && (
-                        <p className="text-sm"><span className="text-muted-foreground">Keyword Density:</span> {(result.keyword_density * 100).toFixed(1)}%</p>
-                      )}
+                      {result.grade_level && <p className="text-sm"><span className="text-muted-foreground">Grade Level:</span> {typeof result.grade_level === 'number' ? Math.round(result.grade_level) : isNaN(Number(result.grade_level)) ? result.grade_level : Math.round(Number(result.grade_level))}</p>}
+                      {result.word_count != null && <p className="text-sm"><span className="text-muted-foreground">Words:</span> {result.word_count}</p>}
+                      {result.keyword_density != null && (() => {
+                        // keyword_density can be a number or an object like {"keyword": 0.028}
+                        const density = typeof result.keyword_density === 'number'
+                          ? result.keyword_density
+                          : typeof result.keyword_density === 'object'
+                            ? Object.values(result.keyword_density).find(v => typeof v === 'number') ?? null
+                            : null
+                        return density != null && !isNaN(density) ? (
+                          <p className="text-sm"><span className="text-muted-foreground">Keyword Density:</span> {(density * 100).toFixed(1)}%</p>
+                        ) : null
+                      })()}
                     </div>
                   </div>
                 </CardContent>
@@ -121,7 +129,11 @@ export default function OptimizePage() {
                       {Object.entries(result.eeat_score).map(([key, value]) => (
                         <div key={key} className="flex items-center justify-between">
                           <span className="text-sm capitalize">{key.replace(/_/g, ' ')}</span>
-                          <span className="text-sm font-medium">{typeof value === 'number' ? `${value}/10` : String(value)}</span>
+                          <span className="text-sm font-medium">
+                            {typeof value === 'number'
+                              ? key === 'total' ? `${value}/100` : `${value}/25`
+                              : String(value)}
+                          </span>
                         </div>
                       ))}
                     </div>
@@ -139,15 +151,22 @@ export default function OptimizePage() {
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-1.5 max-h-60 overflow-y-auto">
-                      {result.entities.map((entity, idx) => (
-                        <div key={idx} className="flex items-center justify-between text-sm">
-                          <span className="font-medium">{entity.name}</span>
-                          <div className="flex items-center gap-2">
-                            <Badge variant="outline" className="text-[10px]">{entity.type}</Badge>
-                            <span className="text-xs text-muted-foreground">{(entity.relevance * 100).toFixed(0)}%</span>
+                      {result.entities.map((entity, idx) => {
+                        const e = entity as Record<string, unknown>
+                        const name = String(e.matched_text || e.name || e.entity_id || '')
+                        const rawType = e.type
+                        const type = Array.isArray(rawType) ? (rawType[0] || '') : String(rawType || '')
+                        const rel = Number(e.relevance_score ?? e.relevance ?? e.confidence_score ?? 0)
+                        return (
+                          <div key={idx} className="flex items-center justify-between text-sm">
+                            <span className="font-medium">{name}</span>
+                            <div className="flex items-center gap-2">
+                              {type && <Badge variant="outline" className="text-[10px]">{type}</Badge>}
+                              {!isNaN(rel) && <span className="text-xs text-muted-foreground">{(rel * 100).toFixed(0)}%</span>}
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        )
+                      })}
                     </div>
                   </CardContent>
                 </Card>
@@ -172,9 +191,9 @@ export default function OptimizePage() {
                             >
                               {s.priority}
                             </Badge>
-                            <span className="text-xs text-muted-foreground">{s.category}</span>
+                            <span className="text-xs font-medium">{s.title || s.category}</span>
                           </div>
-                          <p className="text-sm">{s.message}</p>
+                          <p className="text-sm text-muted-foreground">{s.description || s.message}</p>
                         </div>
                       ))}
                     </div>

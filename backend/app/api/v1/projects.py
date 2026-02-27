@@ -101,14 +101,32 @@ def delete_project(project_id: str, user: User = Depends(get_current_user), db: 
 
 @router.get("/{project_id}/members", response_model=list[ProjectMemberResponse])
 def list_members(project_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    members = db.exec(select(ProjectMember).where(ProjectMember.project_id == project_id)).all()
+    project = db.get(Project, project_id)
     result = []
+
+    # Always include the project owner first
+    if project:
+        owner = db.get(User, project.owner_id)
+        if owner:
+            result.append(ProjectMemberResponse(
+                id=f"owner-{project.id}", project_id=project_id, user_id=owner.id, role="admin",
+                user_email=owner.email, user_name=owner.full_name or owner.email,
+            ))
+
+    members = db.exec(select(ProjectMember).where(ProjectMember.project_id == project_id)).all()
+    seen_user_ids = {r.user_id for r in result}
     for m in members:
+        if m.user_id in seen_user_ids:
+            continue
         u = db.get(User, m.user_id)
+        if not u:
+            # Skip orphaned members with invalid user_id
+            continue
         result.append(ProjectMemberResponse(
             id=m.id, project_id=m.project_id, user_id=m.user_id, role=m.role,
-            user_email=u.email if u else None, user_name=u.full_name if u else None,
+            user_email=u.email, user_name=u.full_name or u.email,
         ))
+        seen_user_ids.add(m.user_id)
     return result
 
 
@@ -117,14 +135,34 @@ def add_member(project_id: str, data: ProjectMemberAdd, user: User = Depends(get
     role = get_project_role(db, user, project_id)
     if ROLE_HIERARCHY.get(role or "", 0) < ROLE_HIERARCHY["strategist"]:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Strategist or admin access required to manage members")
-    member = ProjectMember(project_id=project_id, user_id=data.user_id, role=data.role)
+
+    # Look up user by email or user_id
+    target_user = None
+    if data.email:
+        target_user = db.exec(select(User).where(User.email == data.email)).first()
+        if not target_user:
+            raise HTTPException(status_code=404, detail=f"No user found with email: {data.email}")
+    elif data.user_id:
+        target_user = db.get(User, data.user_id)
+        if not target_user:
+            raise HTTPException(status_code=404, detail=f"No user found with ID: {data.user_id}")
+    else:
+        raise HTTPException(status_code=400, detail="Provide either email or user_id")
+
+    # Check if already a member
+    existing = db.exec(
+        select(ProjectMember).where(ProjectMember.project_id == project_id, ProjectMember.user_id == target_user.id)
+    ).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="User is already a member of this project")
+
+    member = ProjectMember(project_id=project_id, user_id=target_user.id, role=data.role)
     db.add(member)
     db.commit()
     db.refresh(member)
-    u = db.get(User, member.user_id)
     return ProjectMemberResponse(
         id=member.id, project_id=member.project_id, user_id=member.user_id, role=member.role,
-        user_email=u.email if u else None, user_name=u.full_name if u else None,
+        user_email=target_user.email, user_name=target_user.full_name or target_user.email,
     )
 
 

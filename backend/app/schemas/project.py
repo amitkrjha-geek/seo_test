@@ -31,7 +31,8 @@ class ProjectResponse(BaseModel):
 
 
 class ProjectMemberAdd(BaseModel):
-    user_id: str
+    user_id: str | None = None
+    email: str | None = None
     role: ProjectMemberRole = ProjectMemberRole.WRITER
 
 

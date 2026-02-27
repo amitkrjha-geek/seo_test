@@ -45,9 +45,17 @@ export default function WritePage() {
     editorRef.current?.clear()
 
     try {
+      // Step 1: Create a draft first (stream_only=true to skip background write)
+      const { id: draftId } = await api.createContentDraft(currentProject.id, {
+        keyword,
+        provider,
+        stream_only: true,
+      })
+
+      // Step 2: Stream content using the draft ID
       let accumulated = ''
       const cancel = api.streamSSE(
-        `/content/stream?project_id=${currentProject.id}&keyword=${encodeURIComponent(keyword)}&provider=${provider}`,
+        `/content/${draftId}/stream?project_id=${currentProject.id}&keyword=${encodeURIComponent(keyword)}&provider=${provider}`,
         (data) => {
           if (typeof data === 'object' && data !== null && 'chunk' in data) {
             const chunk = (data as { chunk: string }).chunk
@@ -55,9 +63,25 @@ export default function WritePage() {
             editorRef.current?.setContent(markdownToHtml(accumulated))
           }
         },
-        () => {
+        async () => {
           setIsWriting(false)
-          loadDrafts()
+          // Step 3: Save streamed content to the draft
+          try {
+            const html = editorRef.current?.getHTML() || markdownToHtml(accumulated)
+            await api.updateContentDraft(draftId, {
+              body: accumulated,
+              content_html: html,
+              title: keyword,
+            })
+          } catch { /* ignore save error */ }
+          await loadDrafts()
+          // Auto-select the new draft
+          try {
+            const draft = await api.getContentDraft(draftId)
+            setSelected(draft)
+            setMetaTitle(draft.meta_title || '')
+            setMetaDescription(draft.meta_description || '')
+          } catch { /* ignore */ }
         }
       )
       abortRef.current = cancel
@@ -242,7 +266,7 @@ export default function WritePage() {
                     </Badge>
                     {d.seo_score != null && <span className="text-[10px] text-muted-foreground">Score: {d.seo_score}</span>}
                   </div>
-                  <p className="text-[10px] text-muted-foreground mt-1">{d.llm_provider} · {new Date(d.created_at).toLocaleDateString()}</p>
+                  <p className="text-[10px] text-muted-foreground mt-1">{d.llm_provider} · {new Date(d.updated_at || d.created_at).toLocaleDateString()}</p>
                 </CardContent>
               </Card>
             ))

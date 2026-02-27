@@ -36,7 +36,7 @@ class CWVSnapshot(SQLModel, table=True):
     url: str
     lcp: float | None = None
     inp: float | None = None
-    cls: float | None = None
+    cls_value: float | None = Field(default=None, sa_column=Column("cls", sa.Float, nullable=True))
     fcp: float | None = None
     ttfb: float | None = None
     performance_score: float | None = None
