@@ -9,18 +9,18 @@ import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
-import { Trash2, Save, Eye, EyeOff } from 'lucide-react'
+import { Trash2, Save, Eye, EyeOff, FlaskConical } from 'lucide-react'
 import { ApiKeyGuide } from '@/components/settings/api-key-guide'
 import { ConnectionSettings } from '@/components/publishing/connection-settings'
 
 const API_PROVIDERS = [
-  { key: 'anthropic', label: 'Anthropic (Claude)', description: 'AI writing & analysis' },
-  { key: 'openai', label: 'OpenAI (GPT)', description: 'AI writing & analysis' },
-  { key: 'google_ai', label: 'Google AI (Gemini)', description: 'AI writing & analysis' },
-  { key: 'serper', label: 'Serper.dev', description: 'SERP data & keyword research' },
-  { key: 'textrazor', label: 'TextRazor', description: 'NLP entity extraction' },
-  { key: 'google_nlp', label: 'Google Cloud NLP', description: 'Entity extraction' },
-  { key: 'pagespeed', label: 'PageSpeed Insights', description: 'Core Web Vitals' },
+  { key: 'anthropic', label: 'Anthropic (Claude)', description: 'AI writing & analysis', testable: true },
+  { key: 'openai', label: 'OpenAI (GPT)', description: 'AI writing & analysis', testable: true },
+  { key: 'google_ai', label: 'Google AI (Gemini)', description: 'AI writing & analysis', testable: true },
+  { key: 'serper', label: 'Serper.dev', description: 'SERP data & keyword research', testable: false },
+  { key: 'textrazor', label: 'TextRazor', description: 'NLP entity extraction', testable: false },
+  { key: 'google_nlp', label: 'Google Cloud NLP', description: 'Entity extraction', testable: false },
+  { key: 'pagespeed', label: 'PageSpeed Insights', description: 'Core Web Vitals', testable: false },
 ]
 
 export default function SettingsPage() {
@@ -217,6 +217,7 @@ function ApiKeysForm({ projectId }: { projectId: string }) {
   const [keys, setKeys] = useState<ProjectApiKey[]>([])
   const [newKeys, setNewKeys] = useState<Record<string, string>>({})
   const [showKeys, setShowKeys] = useState<Record<string, boolean>>({})
+  const [testStatus, setTestStatus] = useState<Record<string, 'idle' | 'loading' | 'ok' | 'fail'>>({})
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
@@ -249,12 +250,25 @@ function ApiKeysForm({ projectId }: { projectId: string }) {
     }
   }
 
+  const handleTestKey = async (provider: string) => {
+    setTestStatus((s) => ({ ...s, [provider]: 'loading' }))
+    try {
+      await api.testProjectApiKey(projectId, provider)
+      setTestStatus((s) => ({ ...s, [provider]: 'ok' }))
+    } catch {
+      setTestStatus((s) => ({ ...s, [provider]: 'fail' }))
+    } finally {
+      setTimeout(() => setTestStatus((s) => ({ ...s, [provider]: 'idle' })), 4000)
+    }
+  }
+
   if (loading) return <p className="text-sm text-muted-foreground">Loading API keys...</p>
 
   return (
     <div className="space-y-4">
       {API_PROVIDERS.map((prov) => {
         const existing = keys.find((k) => k.provider === prov.key)
+        const status = testStatus[prov.key] ?? 'idle'
         return (
           <Card key={prov.key}>
             <CardHeader className="pb-3">
@@ -273,6 +287,20 @@ function ApiKeysForm({ projectId }: { projectId: string }) {
               {existing ? (
                 <div className="flex items-center gap-2">
                   <Input value={existing.masked_key} disabled className="font-mono text-xs" />
+                  {prov.testable && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleTestKey(prov.key)}
+                      disabled={status === 'loading'}
+                      title="Test connection"
+                    >
+                      <FlaskConical className="h-3 w-3" />
+                      <span className="ml-1 hidden sm:inline">
+                        {status === 'loading' ? 'Testing…' : status === 'ok' ? '✓ OK' : status === 'fail' ? '✗ Failed' : 'Test'}
+                      </span>
+                    </Button>
+                  )}
                   <Button size="sm" variant="destructive" onClick={() => handleDeleteKey(prov.key)}>
                     <Trash2 className="h-3 w-3" />
                   </Button>

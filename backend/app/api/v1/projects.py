@@ -13,6 +13,7 @@ from ...schemas.project import (
 )
 from ...services.crypto_service import encrypt_api_key, decrypt_api_key, mask_api_key
 from ...api.deps import get_db, get_current_user, get_project_role, ROLE_HIERARCHY
+from ...llm.factory import get_provider, PROVIDERS
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
@@ -227,3 +228,25 @@ def delete_api_key(project_id: str, provider: str, user: User = Depends(get_curr
     if key:
         db.delete(key)
         db.commit()
+
+
+@router.post("/{project_id}/api-keys/{provider}/test")
+async def test_api_key(project_id: str, provider: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if provider not in PROVIDERS:
+        raise HTTPException(status_code=400, detail=f"Unknown provider: {provider}")
+    key_obj = db.exec(
+        select(ProjectApiKey).where(
+            ProjectApiKey.project_id == project_id,
+            ProjectApiKey.provider == provider,
+        )
+    ).first()
+    if not key_obj:
+        raise HTTPException(status_code=404, detail="API key not configured for this provider")
+
+    plain_key = decrypt_api_key(key_obj.encrypted_key)
+    try:
+        llm = get_provider(provider, plain_key)
+        await llm.complete("You are a test assistant.", "Reply with just the word OK.", 0.0, 5)
+        return {"ok": True, "provider": provider}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Key test failed: {str(e)}")

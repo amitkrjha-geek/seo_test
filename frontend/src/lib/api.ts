@@ -181,6 +181,13 @@ class ApiClient {
     return this.request<void>(`/projects/${projectId}/api-keys/${provider}`, { method: 'DELETE' })
   }
 
+  async testProjectApiKey(projectId: string, provider: string) {
+    return this.request<{ ok: boolean; provider: string }>(
+      `/projects/${projectId}/api-keys/${provider}/test`,
+      { method: 'POST' }
+    )
+  }
+
   // Audits (Step 1)
   async getAudits(projectId: string) {
     return this.request<import('./types').SiteAudit[]>(`/audits?project_id=${projectId}`)
