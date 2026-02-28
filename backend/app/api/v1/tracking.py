@@ -106,7 +106,7 @@ def get_cwv_history(project_id: str, user: User = Depends(get_current_user), db:
         select(CWVSnapshot).where(CWVSnapshot.project_id == project_id).order_by(CWVSnapshot.created_at.desc())
     ).all()
     return [
-        {"url": s.url, "lcp": s.lcp, "inp": s.inp, "cls": s.cls, "fcp": s.fcp, "ttfb": s.ttfb,
+        {"url": s.url, "lcp": s.lcp, "inp": s.inp, "cls": s.cls_value, "fcp": s.fcp, "ttfb": s.ttfb,
          "performance_score": s.performance_score, "created_at": s.created_at.isoformat()}
         for s in snapshots
     ]

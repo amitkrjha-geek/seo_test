@@ -21,6 +21,7 @@ class ContentCreate(BaseModel):
     target_keyword: str
     llm_provider: str = "anthropic"
     llm_model: str | None = None
+    stream_only: bool = False  # If True, only create draft without background writing
 
 
 class ContentUpdate(BaseModel):
@@ -71,13 +72,14 @@ def create_content(data: ContentCreate, background_tasks: BackgroundTasks, user:
     db.commit()
     db.refresh(draft)
 
-    llm_key = _get_key(db, data.project_id, data.llm_provider)
-    persona = db.exec(select(BrandPersona).where(BrandPersona.project_id == data.project_id)).first()
-    persona_context = persona.to_prompt_context() if persona else ""
+    if not data.stream_only:
+        llm_key = _get_key(db, data.project_id, data.llm_provider)
+        persona = db.exec(select(BrandPersona).where(BrandPersona.project_id == data.project_id)).first()
+        persona_context = persona.to_prompt_context() if persona else ""
 
-    background_tasks.add_task(
-        _write_bg, draft.id, brief_json, data.target_keyword, data.llm_provider, llm_key or "", data.llm_model, persona_context
-    )
+        background_tasks.add_task(
+            _write_bg, draft.id, brief_json, data.target_keyword, data.llm_provider, llm_key or "", data.llm_model, persona_context
+        )
     return {"id": draft.id, "status": "writing"}
 
 

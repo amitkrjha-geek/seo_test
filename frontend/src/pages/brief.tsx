@@ -124,9 +124,22 @@ export default function BriefPage() {
                       {Object.entries(selected.serp_insights).map(([key, value]) => (
                         <div key={key} className="rounded-lg border p-3">
                           <p className="text-xs text-muted-foreground capitalize">{key.replace(/_/g, ' ')}</p>
-                          <p className="text-sm font-medium mt-1">
-                            {Array.isArray(value) ? (value as string[]).join(', ') : typeof value === 'object' ? JSON.stringify(value) : String(value)}
-                          </p>
+                          <div className="text-sm font-medium mt-1">
+                            {Array.isArray(value)
+                              ? value.length > 0 && typeof value[0] === 'object'
+                                ? (value as Array<Record<string, unknown>>).map((item, i) => (
+                                    <div key={i} className="mb-2 last:mb-0">
+                                      {item.title && <p className="font-semibold">{String(item.title)}</p>}
+                                      {item.snippet && <p className="text-xs text-muted-foreground">{String(item.snippet)}</p>}
+                                      {item.link && <a href={String(item.link)} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:underline break-all">{String(item.link)}</a>}
+                                      {item.question && <p>{String(item.question)}</p>}
+                                    </div>
+                                  ))
+                                : (value as string[]).join(', ')
+                              : typeof value === 'object' && value !== null
+                                ? JSON.stringify(value, null, 2)
+                                : String(value)}
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -194,12 +207,72 @@ export default function BriefPage() {
   )
 }
 
-function OutlineViewer({ data }: { data: Record<string, unknown> }) {
-  // Render outline data as structured content
-  const title = data.title || data.suggested_title || ''
-  const sections = (data.sections || data.headings || []) as Record<string, unknown>[]
+function parseOutlineData(data: Record<string, unknown>): Record<string, unknown> {
+  // If we have a raw_brief string, try to parse it as JSON (strip code fences first)
+  if (data.raw_brief && typeof data.raw_brief === 'string') {
+    try {
+      let cleaned = (data.raw_brief as string).trim()
+      if (cleaned.startsWith('```')) {
+        cleaned = cleaned.split('\n').slice(1).join('\n') // remove opening fence line
+        if (cleaned.trimEnd().endsWith('```')) {
+          cleaned = cleaned.trimEnd().slice(0, -3).trimEnd()
+        }
+      }
+      const parsed = JSON.parse(cleaned)
+      if (typeof parsed === 'object' && parsed !== null) return parsed
+    } catch { /* fall through */ }
+  }
+  return data
+}
+
+function extractSections(data: Record<string, unknown>): Record<string, unknown>[] {
+  // Direct array fields
+  for (const key of ['sections', 'headings']) {
+    if (Array.isArray(data[key])) return data[key] as Record<string, unknown>[]
+  }
+  // Nested outline objects like { content_outline: { h2: [...] } } or { outline: { sections: [...] } }
+  for (const key of ['content_outline', 'outline']) {
+    const val = data[key]
+    if (val && typeof val === 'object' && !Array.isArray(val)) {
+      const obj = val as Record<string, unknown>
+      // Look for arrays inside the outline object
+      for (const subKey of ['h2', 'sections', 'headings', 'h2_sections']) {
+        if (Array.isArray(obj[subKey])) return obj[subKey] as Record<string, unknown>[]
+      }
+      // If the outline object itself has numbered/named children, try first array found
+      const firstArray = Object.values(obj).find(v => Array.isArray(v))
+      if (firstArray) return firstArray as Record<string, unknown>[]
+    }
+    if (Array.isArray(val)) return val as Record<string, unknown>[]
+  }
+  return []
+}
+
+function OutlineViewer({ data: rawData }: { data: Record<string, unknown> }) {
+  const data = parseOutlineData(rawData)
+
+  const title = data.title || data.suggested_title || data.recommended_title || ''
   const meta = data.meta_description || data.meta || ''
-  const wordCount = data.target_word_count || data.word_count || ''
+  const wordCount = data.target_word_count || data.word_count || data.word_count_target || ''
+  const sections = extractSections(data)
+
+  // Keys we've already rendered
+  const handledKeys = new Set([
+    'title', 'suggested_title', 'recommended_title',
+    'sections', 'headings', 'content_outline', 'outline',
+    'meta_description', 'meta', 'target_word_count', 'word_count', 'word_count_target',
+    'raw_brief'
+  ])
+  const extraEntries = Object.entries(data).filter(([k]) => !handledKeys.has(k))
+
+  // If raw_brief couldn't be parsed AND there's no structured data, show as text
+  if (rawData.raw_brief && typeof rawData.raw_brief === 'string' && !title && sections.length === 0 && extraEntries.length === 0) {
+    return (
+      <div className="prose prose-sm max-w-none">
+        <div className="whitespace-pre-wrap text-sm">{rawData.raw_brief as string}</div>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-4">
@@ -223,20 +296,25 @@ function OutlineViewer({ data }: { data: Record<string, unknown> }) {
       )}
       {sections.length > 0 && (
         <div>
-          <p className="text-xs text-muted-foreground mb-2">Sections</p>
+          <p className="text-xs text-muted-foreground mb-2">Content Outline</p>
           <div className="space-y-2">
             {sections.map((section, idx) => (
               <div key={idx} className="rounded-lg border p-3">
                 <div className="flex items-center gap-2 mb-1">
                   <FileText className="h-3.5 w-3.5 text-muted-foreground" />
                   <span className="font-medium text-sm">
-                    {typeof section === 'string' ? section : (section.heading || section.title || `Section ${idx + 1}`) as string}
+                    {(() => {
+                      const raw = typeof section === 'string' ? section : String(section.heading || section.title || section.h2 || section.h3 || `Section ${idx + 1}`)
+                      return raw.replace(/^H[2-4]:\s*/i, '')
+                    })()}
                   </span>
                 </div>
-                {typeof section === 'object' && section.points && (
+                {typeof section === 'object' && (section.points || section.key_points || section.subheadings || section.sub_sections) && (
                   <ul className="ml-6 mt-1 space-y-1">
-                    {(section.points as string[]).map((point, pidx) => (
-                      <li key={pidx} className="text-xs text-muted-foreground list-disc">{point}</li>
+                    {((section.points || section.key_points || section.subheadings || section.sub_sections) as unknown[]).map((point, pidx) => (
+                      <li key={pidx} className="text-xs text-muted-foreground list-disc">
+                        {typeof point === 'string' ? point : typeof point === 'object' && point !== null ? ((point as Record<string, unknown>).heading || (point as Record<string, unknown>).title || (point as Record<string, unknown>).text || JSON.stringify(point)) as string : String(point)}
+                      </li>
                     ))}
                   </ul>
                 )}
@@ -248,8 +326,45 @@ function OutlineViewer({ data }: { data: Record<string, unknown> }) {
           </div>
         </div>
       )}
-      {sections.length === 0 && (
-        <pre className="text-xs bg-muted p-3 rounded-md overflow-auto">{JSON.stringify(data, null, 2)}</pre>
+      {extraEntries.length > 0 && (
+        <div className="space-y-3">
+          {extraEntries.map(([key, value]) => (
+            <div key={key} className="rounded-lg border p-3">
+              <p className="text-xs text-muted-foreground mb-1 capitalize">{key.replace(/_/g, ' ')}</p>
+              <div className="text-sm">
+                {typeof value === 'string' ? (
+                  <p>{value}</p>
+                ) : Array.isArray(value) ? (
+                  <ul className="ml-4 space-y-1">
+                    {value.map((item, i) => (
+                      <li key={i} className="list-disc text-sm">
+                        {typeof item === 'string' ? item : typeof item === 'object' && item !== null
+                          ? (() => {
+                              const obj = item as Record<string, unknown>
+                              const anchorText = obj.link_anchor || obj.anchor || obj.anchor_text
+                              const url = obj.url || obj.link || obj.href
+                              if (anchorText && url) {
+                                return <><span className="font-medium">{String(anchorText)}</span> <span className="text-muted-foreground">→ {String(url)}</span></>
+                              }
+                              return String(obj.title || obj.text || obj.query || obj.question || Object.values(obj).join(', '))
+                            })()
+                          : String(item)}
+                      </li>
+                    ))}
+                  </ul>
+                ) : typeof value === 'object' && value !== null ? (
+                  <div className="space-y-1">
+                    {Object.entries(value as Record<string, unknown>).map(([k, v]) => (
+                      <p key={k}><span className="text-muted-foreground capitalize">{k.replace(/_/g, ' ')}:</span> {typeof v === 'string' ? ` ${v}` : Array.isArray(v) ? ` ${v.join(', ')}` : ` ${String(v)}`}</p>
+                    ))}
+                  </div>
+                ) : (
+                  <p>{String(value)}</p>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
       )}
     </div>
   )

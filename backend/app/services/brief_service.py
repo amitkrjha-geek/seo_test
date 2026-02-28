@@ -92,8 +92,16 @@ Create a comprehensive, actionable content brief."""
 
         # Try to parse as JSON, fall back to raw text
         try:
-            outline = json.loads(result)
-        except json.JSONDecodeError:
+            # Strip markdown code fences if present
+            cleaned = result.strip()
+            if cleaned.startswith("```"):
+                # Remove opening fence (```json or ```)
+                cleaned = cleaned.split("\n", 1)[1] if "\n" in cleaned else cleaned[3:]
+                # Remove closing fence
+                if cleaned.rstrip().endswith("```"):
+                    cleaned = cleaned.rstrip()[:-3].rstrip()
+            outline = json.loads(cleaned)
+        except (json.JSONDecodeError, IndexError):
             outline = {"raw_brief": result}
 
         brief.outline = json.dumps(outline, default=str)

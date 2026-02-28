@@ -146,7 +146,7 @@ class ApiClient {
     return this.request<import('./types').ProjectMember[]>(`/projects/${projectId}/members`)
   }
 
-  async addProjectMember(projectId: string, data: { user_id: string; role: string }) {
+  async addProjectMember(projectId: string, data: { user_id?: string; email?: string; role: string }) {
     return this.request<import('./types').ProjectMember>(`/projects/${projectId}/members`, {
       method: 'POST',
       body: JSON.stringify(data),
@@ -261,10 +261,16 @@ class ApiClient {
     return this.request<import('./types').ContentDraft[]>(`/content?project_id=${projectId}`)
   }
 
-  async createContentDraft(projectId: string, data: { keyword: string; brief_id?: string; provider?: string }) {
+  async createContentDraft(projectId: string, data: { keyword: string; brief_id?: string; provider?: string; stream_only?: boolean }) {
     return this.request<{ id: string; status: string }>('/content', {
       method: 'POST',
-      body: JSON.stringify({ project_id: projectId, ...data }),
+      body: JSON.stringify({
+        project_id: projectId,
+        target_keyword: data.keyword,
+        brief_id: data.brief_id,
+        llm_provider: data.provider || 'anthropic',
+        stream_only: data.stream_only ?? false,
+      }),
     })
   }
 
@@ -473,9 +479,11 @@ class ApiClient {
 }
 
 export class ApiError extends Error {
-  constructor(public status: number, message: string) {
+  status: number
+  constructor(status: number, message: string) {
     super(message)
     this.name = 'ApiError'
+    this.status = status
   }
 }
 

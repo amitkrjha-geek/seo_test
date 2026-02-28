@@ -18,9 +18,10 @@ const roleConfig: Record<string, { label: string; icon: React.ComponentType<{ cl
 export default function TeamPage() {
   const { currentProject } = useProject()
   const [members, setMembers] = useState<ProjectMember[]>([])
-  const [newUserId, setNewUserId] = useState('')
+  const [newEmail, setNewEmail] = useState('')
   const [newRole, setNewRole] = useState('writer')
   const [isAdding, setIsAdding] = useState(false)
+  const [addError, setAddError] = useState('')
 
   useEffect(() => {
     if (currentProject) loadMembers()
@@ -35,13 +36,17 @@ export default function TeamPage() {
   }
 
   async function addMember() {
-    if (!currentProject || !newUserId) return
+    if (!currentProject || !newEmail) return
     setIsAdding(true)
+    setAddError('')
     try {
-      await api.addProjectMember(currentProject.id, { user_id: newUserId, role: newRole })
-      setNewUserId('')
+      await api.addProjectMember(currentProject.id, { email: newEmail, role: newRole })
+      setNewEmail('')
       loadMembers()
-    } catch { /* ignore */ }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to add member'
+      setAddError(msg)
+    }
     setIsAdding(false)
   }
 
@@ -85,14 +90,15 @@ export default function TeamPage() {
           <CardTitle className="text-base flex items-center gap-2">
             <UserPlus className="h-4 w-4" /> Add Team Member
           </CardTitle>
-          <CardDescription>Add a user by their user ID</CardDescription>
+          <CardDescription>Add a user by their email address</CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-2">
           <div className="flex flex-col sm:flex-row gap-3">
             <Input
-              placeholder="User ID"
-              value={newUserId}
-              onChange={(e) => setNewUserId(e.target.value)}
+              placeholder="Email address"
+              type="email"
+              value={newEmail}
+              onChange={(e) => { setNewEmail(e.target.value); setAddError('') }}
               className="flex-1"
             />
             <div className="flex gap-3">
@@ -102,11 +108,12 @@ export default function TeamPage() {
                 <option value="writer">Writer</option>
                 <option value="client">Client</option>
               </select>
-              <Button onClick={addMember} disabled={isAdding || !newUserId} className="flex-1 sm:flex-none">
+              <Button onClick={addMember} disabled={isAdding || !newEmail} className="flex-1 sm:flex-none">
                 <UserPlus className="h-4 w-4 mr-2" /> Add
               </Button>
             </div>
           </div>
+          {addError && <p className="text-sm text-red-600">{addError}</p>}
         </CardContent>
       </Card>
 
